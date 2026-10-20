@@ -1,0 +1,40 @@
+{
+	"employees":
+		[
+			{
+				"Name": "Ivan",
+				"Surname": "Franko",
+				"BirthDate": "1988/09/05",
+				"Position": "Manager",
+				"IpAddress": "182.165.12.235"
+			},
+			{
+				"Name": "Peter",
+				"Surname": "Modry",
+				"BirthDate": "1955/07/25",
+				"Position": "Developer",
+				"IpAddress": "182.164.12.11"
+			},
+			{
+				"Name": "Martin",
+				"Surname": "Zeleny",
+				"BirthDate": "1998/10/05",
+				"Position": "Developer",
+				"IpAddress": "142.165.12.17"
+			},
+			{
+				"Name": "Ivan",
+				"Surname": "Mokry",
+				"BirthDate": "1995/09/21",
+				"Position": "Tester",
+				"IpAddress": "112.145.120.235"
+			},
+			{
+				"Name": "Matej",
+				"Surname": "Hnedy",
+				"BirthDate": "1985/04/11",
+				"Position": "Sales",
+				"IpAddress": "112.124.120.235"
+			}
+		]
+}

@@ -72,6 +72,8 @@ Po prvom spustení je databáza prázdna, preto:
 1. Kliknite na **Import z JSON**.
 2. Pri **Pozície** vyberte `postions.json` a stlačte **Nahrať**.
 3. Pri **Zamestnanci** vyberte `employes.json` a stlačte **Nahrať**.
+   
+Vzorové súbory `postions.json` a `employes.json` sú v priečinku `data`.
 
 Poradie je dôležité: zamestnanci sa nahrávajú až po pozíciách, aby sa dala pozícia priradiť podľa názvu. Ak sa pozícia nenájde, zamestnanec sa uloží bez pozície.
 
