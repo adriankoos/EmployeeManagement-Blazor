@@ -1,7 +1,9 @@
 ﻿using EmployeeManagement.Client.Models;
 using EmployeeManagement.Data;
+using EmployeeManagement.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+
 
 namespace EmployeeManagement.Controllers
 {
@@ -11,9 +13,12 @@ namespace EmployeeManagement.Controllers
     {
         private readonly AppDbContext _db;
 
-        public EmployeesController(AppDbContext db)
+        private readonly IpCountryService _ipService;
+
+        public EmployeesController(AppDbContext db, IpCountryService ipService)
         {
             _db = db;
+            _ipService = ipService;
         }
 
         // Zobrazenie všetkých zamestnancov
@@ -49,6 +54,8 @@ namespace EmployeeManagement.Controllers
 
             if (exists)
                 return Conflict(new { message = "Zamestnanec s týmto menom, priezviskom a dátumom narodenia už existuje." });
+            // Krajinu zistíme z IP adresy cez externé API
+            employee.IPCountryCode = await _ipService.GetCountryCodeAsync(employee.IPaddress);
 
             employee.Position = null; // pozícia sa viaže cez PositionID
             _db.Employees.Add(employee);

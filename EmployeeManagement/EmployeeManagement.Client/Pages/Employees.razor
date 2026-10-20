@@ -1,0 +1,531 @@
+﻿@page "/"
+@using System.Globalization
+@using System.Net
+@using EmployeeManagement.Client.Models
+@using Microsoft.AspNetCore.Components.Forms
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>Evidencia zamestnancov</PageTitle>
+
+<!-- ÚVODNÝ PANEL -->
+<div class="p-3 mb-4 bg-light rounded-3 border text-center">
+    <h1 class="h3 fw-bold mb-2">Systém na správu zamestnancov</h1>
+    <p class="text-muted mb-0">Vitajte v systéme na evidenciu zamestnancov.</p>
+</div>
+
+<!-- CHYBOVÁ HLÁŠKA (duplicita, nedostupný server, neplatný vstup...) -->
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+        @errorMessage
+        <button type="button" class="btn-close" aria-label="Zavrieť" @onclick="() => errorMessage = null"></button>
+    </div>
+}
+
+<!-- FORMULÁR PRE PRIDANIE / ÚPRAVU ZAMESTNANCA -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">@(isEditing ? "Upraviť zamestnanca" : "Pridať nového zamestnanca")</h5>
+    </div>
+    <div class="card-body">
+        <EditForm Model="currentEmployee" OnSubmit="SaveEmployee">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            @* Ostatné chyby (dátum, pozícia, tvar IP) sa ukážu v tom istom zozname *@
+            @if (formErrors.Count > 0)
+            {
+                <ul class="validation-errors">
+                    @foreach (var err in formErrors)
+                    {
+                        <li class="validation-message">@err</li>
+                    }
+                </ul>
+            }
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Meno *</label>
+                    <InputText class="form-control" @bind-Value="currentEmployee.Name" />
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Priezvisko *</label>
+                    <InputText class="form-control" @bind-Value="currentEmployee.Surname" />
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Dátum narodenia *</label>
+                    <InputText class="form-control" @bind-Value="birthDateText" placeholder="dd.mm.rrrr" />
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Pracovná pozícia *</label>
+                    <InputSelect class="form-select" @bind-Value="currentEmployee.PositionID">
+                        <option value="">-- Vyberte pozíciu --</option>
+                        @foreach (var pos in positions)
+                        {
+                            <option value="@pos.PositionID">@pos.PositionName</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">IP adresa *</label>
+                    <InputText class="form-control" @bind-Value="currentEmployee.IPaddress" placeholder="napr. 8.8.8.8" />
+                </div>
+
+                <div class="col-12 mt-3">
+                    <button type="submit" class="btn btn-success" disabled="@isSaving">
+                        @(isEditing ? "Uložiť zmeny" : "Pridať zamestnanca")
+                    </button>
+                    @if (isEditing)
+                    {
+                        <button type="button" class="btn btn-secondary ms-2" @onclick="CancelEdit">Zrušiť</button>
+                    }
+                </div>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+<!-- NADPIS ZOZNAMU A TLAČIDLO IMPORTU -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Zoznam zamestnancov</h4>
+    <button type="button" class="btn btn-outline-secondary" @onclick="() => showImport = !showImport">
+        Import z JSON
+    </button>
+</div>
+
+<!-- PANEL IMPORTU  -->
+@if (showImport)
+{
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            @if (!string.IsNullOrEmpty(importMessage))
+            {
+                <div class="alert alert-info">@importMessage</div>
+            }
+
+            <label class="form-label fw-bold">Pozície</label>
+            <div class="input-group">
+                <InputFile class="form-control" OnChange="OnPositionsFileSelected" accept=".json" />
+                <button type="button" class="btn btn-primary" @onclick="ImportPositions"
+                        disabled="@(positionsFile == null || isImporting)">
+                    Nahrať 
+                </button>
+            </div>
+
+            <label class="form-label fw-bold mt-3">Zamestnanci</label>
+            <div class="input-group">
+                <InputFile class="form-control" OnChange="OnEmployeesFileSelected" accept=".json" />
+                <button type="button" class="btn btn-primary" @onclick="ImportEmployees"
+                        disabled="@(employeesFile == null || isImporting)">
+                    Nahrať 
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- TABUĽKA ZOZNAMU ZAMESTNANCOV -->
+@if (employees == null)
+{
+    <p><em>Načítavam zamestnancov...</em></p>
+}
+else if (!employees.Any())
+{
+    <div class="alert alert-info">V evidencii zatiaľ nie je žiadny zamestnanec. Pridajte prvého vo formulári vyššie.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Meno</th>
+                    <th>Priezvisko</th>
+                    <th>Dátum narodenia</th>
+                    <th>Pozícia</th>
+                    <th>IP adresa</th>
+                    <th>Krajina</th>
+                    <th style="width: 160px;">Akcie</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var emp in employees)
+                {
+                    <tr>
+                        <td>
+                            <button type="button" class="btn btn-link p-0" @onclick="() => ShowDetail(emp)">@emp.Name</button>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-link p-0" @onclick="() => ShowDetail(emp)">@emp.Surname</button>
+                        </td>
+                        <td>@emp.BirthDate.ToString("dd.MM.yyyy")</td>
+                        <td>@(emp.Position?.PositionName ?? "Nezadaná")</td>
+                        <td><code>@emp.IPaddress</code></td>
+                        <td><span class="badge bg-secondary">@(emp.IPCountryCode ?? "-")</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-warning me-1" @onclick="() => EditEmployee(emp)">Upraviť</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteEmployee(emp)">Zmazať</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- POPUP S DETAILOM ZAMESTNANCA -->
+@if (selectedEmployee != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0, 0, 0, 0.5);" @onclick="CloseDetail">
+        <div class="modal-dialog modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@selectedEmployee.Name @selectedEmployee.Surname</h5>
+                    <button type="button" class="btn-close" aria-label="Zavrieť" @onclick="CloseDetail"></button>
+                </div>
+                <div class="modal-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-5">Meno</dt>
+                        <dd class="col-sm-7">@selectedEmployee.Name</dd>
+
+                        <dt class="col-sm-5">Priezvisko</dt>
+                        <dd class="col-sm-7">@selectedEmployee.Surname</dd>
+
+                        <dt class="col-sm-5">Dátum narodenia</dt>
+                        <dd class="col-sm-7">@selectedEmployee.BirthDate.ToString("dd.MM.yyyy")</dd>
+
+                        <dt class="col-sm-5">Pracovná pozícia</dt>
+                        <dd class="col-sm-7">@(selectedEmployee.Position?.PositionName ?? "Nezadaná")</dd>
+
+                        <dt class="col-sm-5">IP adresa</dt>
+                        <dd class="col-sm-7">@selectedEmployee.IPaddress</dd>
+
+                        <dt class="col-sm-5">Krajina (kód)</dt>
+                        <dd class="col-sm-7">@(selectedEmployee.IPCountryCode ?? "Nezistená")</dd>
+                    </dl>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseDetail">Zavrieť</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Employee>? employees;
+    private List<Position> positions = new();
+    private Employee currentEmployee = NewEmployee();
+    private Employee? selectedEmployee;
+    private bool isEditing;
+    private bool isSaving;
+    private string? errorMessage;
+
+    // Chyby formulára, ktoré nevie ohlásiť model (dátum, pozícia, tvar IP)
+    private List<string> formErrors = new();
+
+    // Dátum narodenia sa píše ručne ako text (dd.mm.rrrr) a pri uložení sa prevedie na dátum
+    private string birthDateText = "";
+
+    // Import z JSON
+    private bool showImport;
+    private bool isImporting;
+    private IBrowserFile? positionsFile;
+    private IBrowserFile? employeesFile;
+    private string? importMessage;
+
+    private static Employee NewEmployee() => new() { BirthDate = DateTime.Today };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPositions();
+        await LoadEmployees();
+    }
+
+    private async Task LoadEmployees()
+    {
+        try
+        {
+            employees = await Http.GetFromJsonAsync<List<Employee>>("api/employees") ?? new();
+        }
+        catch (Exception)
+        {
+            employees = new();
+            errorMessage = "Zoznam zamestnancov sa nepodarilo načítať. Skontrolujte, či server beží, a skúste to znova.";
+        }
+    }
+
+    private async Task LoadPositions()
+    {
+        try
+        {
+            positions = await Http.GetFromJsonAsync<List<Position>>("api/positions") ?? new();
+        }
+        catch (Exception)
+        {
+            errorMessage = "Zoznam pozícií sa nepodarilo načítať.";
+        }
+    }
+
+    private async Task SaveEmployee(EditContext editContext)
+    {
+        errorMessage = null;
+        formErrors = new List<string>();
+
+        // Medzery na začiatku a na konci by vytvárali "skryté" duplicity
+        currentEmployee.Name = currentEmployee.Name.Trim();
+        currentEmployee.Surname = currentEmployee.Surname.Trim();
+        currentEmployee.IPaddress = currentEmployee.IPaddress.Trim();
+
+        // 1) Pravidlá z modelu (meno, priezvisko, IP povinné) - ich chyby ukáže ValidationSummary
+        bool modelOk = editContext.Validate();
+
+        // 2) Ostatné kontroly zbierame do zoznamu formErrors, ktorý sa ukáže hneď pod nimi
+        var errors = formErrors;
+
+        // Text z poľa "Dátum narodenia" prevedieme na skutočný dátum
+        if (!DateTime.TryParseExact(birthDateText.Trim(), new[] { "d.M.yyyy", "dd.MM.yyyy" },
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate))
+        {
+            errors.Add("Dátum narodenia zadajte v tvare dd.mm.rrrr, napríklad 17.01.2001.");
+        }
+        else if (parsedDate.Date >= DateTime.Today || parsedDate.Year < 1900)
+        {
+            errors.Add("Dátum narodenia nie je platný. Musí byť v minulosti.");
+        }
+        else
+        {
+            currentEmployee.BirthDate = parsedDate;
+        }
+
+        if (currentEmployee.PositionID == null)
+            errors.Add("Vyberte pracovnú pozíciu.");
+
+        // Prázdnu IP už hlási model, tu kontrolujeme len jej tvar
+        if (!string.IsNullOrEmpty(currentEmployee.IPaddress) && !IsValidIp(currentEmployee.IPaddress))
+            errors.Add("IP adresa nemá správny tvar. Zadajte ju napríklad ako 8.8.8.8.");
+
+        if (!modelOk || errors.Count > 0)
+            return;
+
+        isSaving = true;
+        try
+        {
+            HttpResponseMessage response = isEditing
+                ? await Http.PutAsJsonAsync($"api/employees/{currentEmployee.EmployeeID}", currentEmployee)
+                : await Http.PostAsJsonAsync("api/employees", currentEmployee);
+
+            if (response.IsSuccessStatusCode)
+            {
+                currentEmployee = NewEmployee();
+                birthDateText = "";
+                isEditing = false;
+                await LoadEmployees();
+            }
+            else if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                errorMessage = await ReadErrorAsync(response,
+                    "Zamestnanec s týmto menom, priezviskom a dátumom narodenia už existuje.");
+            }
+            else if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                errorMessage = await ReadErrorAsync(response, "Údaje vo formulári nie sú platné.");
+            }
+            else
+            {
+                errorMessage = "Zamestnanca sa nepodarilo uložiť. Skúste to znova.";
+            }
+        }
+        catch (HttpRequestException)
+        {
+            errorMessage = "Server je nedostupný. Skúste to znova o chvíľu.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void EditEmployee(Employee emp)
+    {
+        errorMessage = null;
+        formErrors = new List<string>();
+        isEditing = true;
+        currentEmployee = new Employee
+        {
+            EmployeeID = emp.EmployeeID,
+            Name = emp.Name,
+            Surname = emp.Surname,
+            BirthDate = emp.BirthDate,
+            PositionID = emp.PositionID,
+            IPaddress = emp.IPaddress,
+            IPCountryCode = emp.IPCountryCode
+        };
+        birthDateText = emp.BirthDate.ToString("dd.MM.yyyy");
+    }
+
+    private void CancelEdit()
+    {
+        isEditing = false;
+        currentEmployee = NewEmployee();
+        birthDateText = "";
+        errorMessage = null;
+        formErrors = new List<string>();
+    }
+
+    private async Task DeleteEmployee(Employee emp)
+    {
+        errorMessage = null;
+
+        bool confirmed = await JS.InvokeAsync<bool>("confirm",
+            $"Naozaj chcete zmazať zamestnanca {emp.Name} {emp.Surname}?");
+        if (!confirmed) return;
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/employees/{emp.EmployeeID}");
+            if (response.IsSuccessStatusCode)
+            {
+                if (isEditing && currentEmployee.EmployeeID == emp.EmployeeID)
+                    CancelEdit();
+
+                await LoadEmployees();
+            }
+            else
+            {
+                errorMessage = "Zamestnanca sa nepodarilo zmazať.";
+            }
+        }
+        catch (HttpRequestException)
+        {
+            errorMessage = "Server je nedostupný. Zamestnanec nebol zmazaný.";
+        }
+    }
+
+    private void ShowDetail(Employee emp) => selectedEmployee = emp;
+
+    private void CloseDetail() => selectedEmployee = null;
+
+    // --- Import pozícií z JSON ---
+
+    private void OnPositionsFileSelected(InputFileChangeEventArgs e)
+    {
+        positionsFile = e.File;
+        importMessage = null;
+    }
+
+    private async Task ImportPositions()
+    {
+        if (positionsFile == null) return;
+
+        isImporting = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(positionsFile.OpenReadStream(maxAllowedSize: 1024 * 1024));
+            content.Add(fileContent, "file", positionsFile.Name);
+
+            var response = await Http.PostAsync("api/import/positions", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<ImportResult>();
+                importMessage = result?.Message;
+                await LoadPositions();
+            }
+            else
+            {
+                importMessage = "Import pozícií sa nepodaril. Skontrolujte, či je to správny JSON súbor.";
+            }
+        }
+        catch (Exception)
+        {
+            importMessage = "Súbor sa nepodarilo nahrať. Skúste to znova.";
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+
+    // --- Import zamestnancov z JSON ---
+
+    private void OnEmployeesFileSelected(InputFileChangeEventArgs e)
+    {
+        employeesFile = e.File;
+        importMessage = null;
+    }
+
+    private async Task ImportEmployees()
+    {
+        if (employeesFile == null) return;
+
+        isImporting = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(employeesFile.OpenReadStream(maxAllowedSize: 1024 * 1024));
+            content.Add(fileContent, "file", employeesFile.Name);
+
+            var response = await Http.PostAsync("api/import/employees", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<ImportResult>();
+                importMessage = result?.Message;
+                await LoadEmployees();
+            }
+            else
+            {
+                importMessage = "Import zamestnancov sa nepodaril. Skontrolujte, či je to správny JSON súbor.";
+            }
+        }
+        catch (Exception)
+        {
+            importMessage = "Súbor sa nepodarilo nahrať. Skúste to znova.";
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+
+    private static bool IsValidIp(string ip)
+    {
+        if (!IPAddress.TryParse(ip, out var address)) return false;
+
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            return ip.Split('.').Length == 4;   // IPv4: napr. 8.8.8.8
+
+        return false;                          
+    }
+
+    // Prečíta text chyby, ktorý poslal server ({ "message": "..." }), inak použije náhradný text
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response, string fallback)
+    {
+        try
+        {
+            var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+            return error?.Message ?? fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    private class ErrorResponse
+    {
+        public string? Message { get; set; }
+    }
+
+    private class ImportResult
+    {
+        public string? Message { get; set; }
+    }
+}
